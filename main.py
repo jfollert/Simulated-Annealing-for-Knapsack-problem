@@ -2,6 +2,17 @@ import sys
 import random
 import math
 from prettytable import PrettyTable
+import numpy as np
+
+MAX_ITERARIONS = 20
+INITIAL_TEMP = 10
+TEMP_VARIATION = 0.9
+PENALTY_WEIGHT = 7
+
+# Config PrettyTable
+table = PrettyTable()
+table.field_names = ["It.", "sol. actual (calidad)", "peso", "sobrepeso", "T", "delta eval", "p", "decisión", "mejor solución"]
+#prev_row = []
 
 def parser(filename):
 	file = open(filename, 'r')
@@ -10,11 +21,11 @@ def parser(filename):
 
 	vars, cons, func = text.split('\n\n')
 
-	# Parse weigth constraint
-	vars_weigths, max_weigth =  cons.split('<=')
-	weigths = list(map(
+	# Parse weight constraint
+	vars_weights, max_weight =  cons.split('<=')
+	weights = list(map(
 			lambda x : int(x.split('X')[0]), 
-			vars_weigths.split('+')
+			vars_weights.split('+')
 		)
 	)
 	
@@ -27,12 +38,17 @@ def parser(filename):
 	)
 	
 	print('Cantidad de variables:', vars)
-	print('Restricción de pesos:', weigths, '<=', max_weigth)
+	print('Restricción de pesos:', weights, '<=', max_weight)
 	print('Función Objetivo:', obj, profits)
-	return int(vars), weigths, int(max_weigth), obj, profits
+	return int(vars), weights, int(max_weight), obj, profits
 
-def generate_initial_sol(n):
-	return [0] * n
+def generate_initial_sol(n, max_weight=0):
+	initial_sol = [0] * n
+	initial_sol = list(map(
+		lambda x : x if random.random() > 0.5 else int(not x),
+		initial_sol
+	))
+	return initial_sol
 
 def generate_neighborhood(solution):
 	neighborhood = []
@@ -43,93 +59,92 @@ def generate_neighborhood(solution):
 		neighborhood.append(neighbour)
 	return neighborhood
 
-def generate_evaluation_func(profits, weigths):
-	C = sum(profits) / sum(weigths)
+def generate_evaluation_func(profits, weights):
+	C = sum(profits) / sum(weights)
 	def evaluation_func(solution, overweight = 0):
-		penalty = overweight * C
-		vars = len(solution)
-		sum = 0
-		for i in range(vars):
-			sum = sum + solution[i] * profits[i]
+		penalty = overweight * PENALTY_WEIGHT * C
+		sum = np.dot(
+			np.array(profits), 
+			np.array(solution)
+		)
 		return sum - penalty
 	return evaluation_func
 
-def generate_weigth_func(weigths):
-	def weigth_func(solution):
-		vars = len(solution)
-		sum = 0
-		for i in range(vars):
-			sum = sum + solution[i] * weigths[i]
-		return sum
-	return weigth_func
+def generate_weight_func(weights):
+	return lambda solution : np.dot(
+		np.array(weights), 
+		np.array(solution)
+	)
 
+def add_table_row(table, row):
+	columns = len(table.field_names)
+	if row == []: 
+		table.add_row([''] * columns)
+	else:
+		table.add_row(row)
 
-def simulated_annealing(vars, weigths, max_weigth, profits):
-	MAX_ITERARIONS = 20
-	INITIAL_TEMP = 10
-	TEMP_VARIATION = 0.9
-
-	# Config PrettyTable
-	table = PrettyTable()
-	table.field_names = ["It.", "sol. actual (calidad)", "peso", "sobrepeso", "T", "delta eval", "p", "decisión", "mejor solución"]
-
+def simulated_annealing(vars, weights, max_weight, profits):
 	# Generate initial solution
 	initial_sol = generate_initial_sol(vars)
 
 	# Generate evaluation function
-	evaluation_func = generate_evaluation_func(profits, weigths)
+	evaluation_func = generate_evaluation_func(profits, weights)
 
-	# Generate weigth function
-	weigth_func = generate_weigth_func(weigths)
+	# Generate weight function
+	weight_func = generate_weight_func(weights)
 
-	current_eval = evaluation_func(initial_sol)
-	#print(f'Solución inicial: {initial_sol} ==> {current_eval}')
-
+	init_weight = weight_func(initial_sol)
+	init_overweight = init_weight - max_weight if init_weight > max_weight else 0
+	current_eval = evaluation_func(initial_sol, init_overweight)
 	best_sol = initial_sol
+	best_eval = current_eval
 	current_sol = initial_sol
 	current_temp = INITIAL_TEMP
-
-	table.add_row([0, f'{tuple(initial_sol)} ({current_eval})', '', '', '', '', '', '', f'{tuple(initial_sol)} ({current_eval})'])
-	table.add_row([''] * len(table.field_names))
+	row = [
+		0,
+		f'{tuple(initial_sol)} ({round(current_eval, 2)})',
+		weight_func(initial_sol),
+		init_overweight,
+		'', '', '', '', 
+		f'{tuple(initial_sol)} ({current_eval})']
+	add_table_row(table, row)
+	add_table_row(table, [])
 
 	break_flag = False
 	for i in range(MAX_ITERARIONS):
-		#print(f'\n\nSolución: {current_sol}')
 		# Generate neighborhood and sort it randomly
 		neighborhood = generate_neighborhood(current_sol)
 		random.shuffle(neighborhood)
 
 		# Iterate the neighborhood looking for an improvement
-		#print('Recorriendo el vecindario...')
 		for neighbour in neighborhood:
-			weigth = weigth_func(neighbour)
-			overweight = weigth - max_weigth if weigth > max_weigth else 0
+			weight = weight_func(neighbour)
+			overweight = weight - max_weight if weight > max_weight else 0
 			eval = evaluation_func(neighbour, overweight)
-			#print(f'\n\t{neighbour} ==> {eval}')
-			#print(f'\tTemperatura: {current_temp}')
 			delta_eval = eval - current_eval
-			#print(f'\tDelta evaluación: {delta_eval}')
 			p = math.exp(delta_eval/current_temp)
 			rand = random.random()
-			#print(f'\t{p} > {rand} = {p > rand}')
 			
 			if p > rand:
 				current_sol = neighbour
 				current_eval = eval
-				if eval > evaluation_func(best_sol, overweight):
+				if eval > best_eval:
 					best_sol = neighbour
+					best_eval = eval
 				break_flag =  True
 
-			table.add_row([
+			row = [
 				i+1 if i != '' else '', 								# Iteration
-				f'{tuple(neighbour)} ({eval})', 						# Current solution
-				weigth,
+				f'{tuple(neighbour)} ({round(eval, 2)})', 				# Current solution
+				weight,
 				overweight,
-				round(current_temp, 2), delta_eval, 					# Temperature
-				round(p, 2), 											# Evaluation Delta
+				round(current_temp, 2), 								# Temperature
+				round(delta_eval, 2), 									# Evaluation Delta
+				round(p, 2), 											# p
 				f'{round(p, 2)} > {round(rand, 2)} = {p > rand}', 		# Decision
 				f'{tuple(best_sol)} ({evaluation_func(best_sol)})'		# Best Solution
-			])
+			]
+			add_table_row(table, row)
 
 			i = ''
 			if break_flag:
@@ -139,10 +154,13 @@ def simulated_annealing(vars, weigths, max_weigth, profits):
 			break
 		
 		current_temp = current_temp * TEMP_VARIATION
-		table.add_row([''] * len(table.field_names))
+		add_table_row(table, [])
 		
 
 	print(table)
+	print(f'=> Solución Final: {tuple(best_sol)}')
+	print(f'=> Ganancia: {round(best_eval, 2)}')
+	print(f'=> Peso: {weight_func(best_sol)}')
 	return best_sol
 
 
@@ -154,9 +172,9 @@ if __name__ == '__main__':
 	filename = sys.argv[1]
 	print('Parseando intancia:', filename)
 	try:
-		vars, weigths, max_weigth, obj, profits = parser(filename)
+		vars, weights, max_weight, obj, profits = parser(filename)
 	except FileNotFoundError:
 		sys.exit(f'Archivo {filename} no encontrado')
 
-	best_sol = simulated_annealing(vars, weigths, max_weigth, profits)
-	print(f'Solución Final {best_sol}')
+	best_sol = simulated_annealing(vars, weights, max_weight, profits)
+	#print(f'Solución Final {best_sol}')
