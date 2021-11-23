@@ -1,1 +1,1 @@
-# Simulated-Annealing-for-Knapsack-problem
+# Simulated Annealing for Knapsack problem
