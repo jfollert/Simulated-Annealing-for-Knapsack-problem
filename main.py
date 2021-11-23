@@ -1,6 +1,7 @@
 import sys
 import random
 import math
+from prettytable import PrettyTable
 
 def parser(filename):
 	file = open(filename, 'r')
@@ -57,6 +58,10 @@ def simulated_annealing(vars, profits):
 	INITIAL_TEMP = 10
 	TEMP_VARIATION = 0.9
 
+	# Config PrettyTable
+	table = PrettyTable()
+	table.field_names = ["It.", "sol. actual (calidad)", "T", "delta eval", "p", "decisión", "mejor solución"]
+
 	# Generate initial solution
 	initial_sol = generate_initial_sol(vars)
 
@@ -64,40 +69,52 @@ def simulated_annealing(vars, profits):
 	evaluation_func = generate_evaluation_func(profits)
 
 	current_eval = evaluation_func(initial_sol)
-	print(f'Solución inicial: {initial_sol} ==> {current_eval}')
+	#print(f'Solución inicial: {initial_sol} ==> {current_eval}')
 
 	best_sol = initial_sol
 	current_sol = initial_sol
 	current_temp = INITIAL_TEMP
+
+	table.add_row([0, f'{tuple(initial_sol)} ({current_eval})', '', '', '', '', f'{tuple(initial_sol)} ({current_eval})'])
+	table.add_row([''] * 7)
 	
+	break_flag = False
 	for i in range(MAX_ITERARIONS):
-		print(f'\n\nSolución: {current_sol}')
+		#print(f'\n\nSolución: {current_sol}')
 		# Generate neighborhood and sort it randomly
 		neighborhood = generate_neighborhood(current_sol)
 		random.shuffle(neighborhood)
 
 		# Iterate the neighborhood looking for an improvement
-		print('Recorriendo el vecindario...')
+		#print('Recorriendo el vecindario...')
 		for neighbour in neighborhood:
 			eval = evaluation_func(neighbour)
-			print(f'\n\t{neighbour} ==> {eval}')
-			print(f'\tTemperatura: {current_temp}')
+			#print(f'\n\t{neighbour} ==> {eval}')
+			#print(f'\tTemperatura: {current_temp}')
 			delta_eval = eval - current_eval
-			print(f'\tDelta evaluación: {delta_eval}')
+			#print(f'\tDelta evaluación: {delta_eval}')
 			p = math.exp(delta_eval/current_temp)
 			rand = random.random()
-			print(f'\t{p} > {rand} = {p > rand}')
+			#print(f'\t{p} > {rand} = {p > rand}')
+			
 			if p > rand:
 				current_sol = neighbour
 				current_eval = eval
 				if eval > evaluation_func(best_sol):
 					best_sol = neighbour
+				break_flag =  True
+			table.add_row([i+1, f'{tuple(neighbour)} ({eval})', round(current_temp, 2), delta_eval, round(p, 2), f'{round(p, 2)} > {round(rand, 2)} = {p > rand}', f'{tuple(best_sol)} ({evaluation_func(best_sol)})'])
+			if break_flag:
+				break_flag = False
 				break
 		else:
 			break
 		
 		current_temp = current_temp * TEMP_VARIATION
+		table.add_row([''] * 7)
+		
 
+	print(table)
 	return best_sol
 
 
